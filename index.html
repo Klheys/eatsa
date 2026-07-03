@@ -10,14 +10,19 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>">
   <style>
     *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-    html,body{height:100%;overflow:hidden}
-    body{background:#1A1A1E;font-family:-apple-system,'SF Pro Display','Inter','Segoe UI',sans-serif}
-    #root{height:100%}
+    html,body,#root{height:100%;overflow:hidden;background:#1A1A1E}
+    body{font-family:-apple-system,'SF Pro Display','Inter','Segoe UI',sans-serif}
     ::-webkit-scrollbar{display:none}
     @keyframes spin{to{transform:rotate(360deg)}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-    input,textarea,button{font-family:inherit}
+    input,textarea,button{font-family:inherit;-webkit-appearance:none}
+    /* Safe area handling via CSS — inline styles can't do env() */
+    .safe-top{padding-top:max(14px,env(safe-area-inset-top))}
+    .scroll-area{overflow-y:auto;-webkit-overflow-scrolling:touch;height:100%}
+    .nav-pad{padding-bottom:84px}
+    .coach-input-pad{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+    .nav-safe{padding-bottom:max(16px,env(safe-area-inset-bottom))}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
@@ -27,260 +32,377 @@
 <div id="root"></div>
 <script type="text/babel">
 var useState=React.useState,useRef=React.useRef,useEffect=React.useEffect;
+var API="/.netlify/functions/chat";
 
-/* ═══ PROXY — toutes les requêtes Claude passent par la fonction Netlify ═══ */
-var API_URL="/.netlify/functions/chat";
-
-var C={bg:"#1A1A1E",bgCard:"#242428",bgEl:"#2E2E34",bgIn:"#1E1E22",
-  tx:"#FAFAF5",txS:"#A8A8B0",txM:"#6B6B74",
-  pr:"#37B97D",prS:"#37B97D22",prG:"#37B97D44",
+var C={bg:"#1A1A1E",card:"#242428",el:"#2E2E34",inp:"#1E1E22",
+  tx:"#FAFAF5",ts:"#A8A8B0",tm:"#6B6B74",
+  pr:"#37B97D",ps:"#37B97D22",pg:"#37B97D44",
   prot:"#7C6FF7",carb:"#FFB443",fat:"#FF6B6B",cal:"#37B97D",
-  ok:"#37B97D",okBg:"#37B97D1A",adj:"#FFB443",adjBg:"#FFB4431A",bad:"#FF6B6B",badBg:"#FF6B6B1A",
-  brd:"#2E2E34",div:"#333338",r:20,rs:14,rx:10};
+  ok:"#37B97D",okB:"#37B97D1A",adj:"#FFB443",adjB:"#FFB4431A",bad:"#FF6B6B",badB:"#FF6B6B1A",
+  bd:"#2E2E34",dv:"#333338"};
 var F="-apple-system,'SF Pro Display','Inter','Segoe UI',sans-serif";
-var NAV_H=72;
-var TOP_SAFE=parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sat")||"0")||0;
+var P={name:"Samuel",calG:1900,protG:140,carbG:200,fatG:55,obj:"Prise de muscle + déficit calorique",act:"Modéré"};
 
-var prof={name:"Samuel",calG:1900,protG:140,carbG:200,fatG:55,obj:"Prise de muscle + déficit calorique",act:"Modéré"};
 var initJ=[
-  {id:1,name:"Skyr nature 0%",time:"08:30",p:10,cal:60,cb:4,f:0,v:"ideal",em:"🥛"},
-  {id:2,name:"Poulet grillé + riz",time:"12:45",p:38,cal:480,cb:55,f:8,v:"ideal",em:"🍗"},
-  {id:3,name:"Barre protéinée Gerblé",time:"16:00",p:12,cal:200,cb:22,f:7,v:"adjust",em:"🍫"},
+  {id:1,n:"Skyr nature 0%",t:"08:30",p:10,cal:60,cb:4,f:0,v:"ideal",e:"🥛"},
+  {id:2,n:"Poulet grillé + riz",t:"12:45",p:38,cal:480,cb:55,f:8,v:"ideal",e:"🍗"},
+  {id:3,n:"Barre protéinée Gerblé",t:"16:00",p:12,cal:200,cb:22,f:7,v:"adjust",e:"🍫"}
 ];
-var favs=[{n:"Skyr 0%",p:10,cal:60,em:"🥛"},{n:"Œufs x2",p:12,cal:140,em:"🥚"},{n:"Poulet 150g",p:35,cal:165,em:"🍗"},{n:"Fromage blanc",p:8,cal:48,em:"🧈"},{n:"Thon naturel",p:26,cal:110,em:"🐟"}];
+var favs=[{n:"Skyr 0%",p:10,cal:60,e:"🥛"},{n:"Œufs x2",p:12,cal:140,e:"🥚"},{n:"Poulet 150g",p:35,cal:165,e:"🍗"},{n:"Fromage blanc",p:8,cal:48,e:"🧈"},{n:"Thon naturel",p:26,cal:110,e:"🐟"}];
 
 var vc=function(v){return v==="ideal"?C.ok:v==="adjust"?C.adj:C.bad};
-var vb=function(v){return v==="ideal"?C.okBg:v==="adjust"?C.adjBg:C.badBg};
+var vb=function(v){return v==="ideal"?C.okB:v==="adjust"?C.adjB:C.badB};
 var vl=function(v){return v==="ideal"?"Idéal":v==="adjust"?"À ajuster":"À éviter"};
 var vi=function(v){return v==="ideal"?"✓":v==="adjust"?"!":"✕"};
-var tot=function(j){return j.reduce(function(a,e){return{p:a.p+e.p,c:a.c+e.cal,cb:a.cb+e.cb,f:a.f+e.f}},{p:0,c:0,cb:0,f:0})};
+var sum=function(j){return j.reduce(function(a,x){return{p:a.p+x.p,c:a.c+x.cal,cb:a.cb+x.cb,f:a.f+x.f}},{p:0,c:0,cb:0,f:0})};
 
+/* Components */
 function CG({value,max,color,label,unit,size,sw,hero}){
-  size=size||140;sw=sw||10;var pct=Math.min(value/max,1),r=(size-sw*2)/2,ci=2*Math.PI*r,off=ci*(1-pct),rem=Math.max(max-value,0);
+  size=size||140;sw=sw||10;
+  var pct=Math.min(value/max,1),r=(size-sw*2)/2,ci=2*Math.PI*r,off=ci*(1-pct),rem=Math.max(max-value,0);
   return <div style={{textAlign:"center",position:"relative"}}>
-    <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.bgEl} strokeWidth={sw}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={sw} strokeDasharray={ci} strokeDashoffset={off} strokeLinecap="round" style={{transition:"stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)",filter:"drop-shadow(0 0 6px "+color+"66)"}}/></svg>
-    <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}><span style={{fontFamily:F,fontSize:hero?32:22,fontWeight:700,color:C.tx,lineHeight:1}}>{value}</span><span style={{fontFamily:F,fontSize:hero?12:10,color:C.txM,marginTop:2}}>{hero?"/ "+max+" "+unit:unit}</span></div>
-    <p style={{fontFamily:F,fontSize:11,fontWeight:600,color:C.txS,margin:"6px 0 0",textTransform:"uppercase",letterSpacing:.8}}>{label}</p>
+    <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.el} strokeWidth={sw}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={sw} strokeDasharray={ci} strokeDashoffset={off} strokeLinecap="round" style={{transition:"stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)",filter:"drop-shadow(0 0 6px "+color+"66)"}}/></svg>
+    <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+      <span style={{fontFamily:F,fontSize:hero?32:22,fontWeight:700,color:C.tx,lineHeight:1}}>{value}</span>
+      <span style={{fontFamily:F,fontSize:hero?12:10,color:C.tm,marginTop:2}}>{hero?"/ "+max+" "+unit:unit}</span>
+    </div>
+    <p style={{fontFamily:F,fontSize:11,fontWeight:600,color:C.ts,margin:"6px 0 0",textTransform:"uppercase",letterSpacing:.8}}>{label}</p>
     {hero&&<p style={{fontFamily:F,fontSize:12,fontWeight:600,color:color,margin:"2px 0 0"}}>{rem>0?rem+" "+unit+" restants":"Objectif atteint ✓"}</p>}
   </div>;
 }
-function Cd({children,style,onClick}){return <div onClick={onClick} style={{background:C.bgCard,borderRadius:C.r,padding:16,border:"1px solid "+C.brd,cursor:onClick?"pointer":"default",...style}}>{children}</div>}
+function Cd({children,style,onClick}){return <div onClick={onClick} style={{background:C.card,borderRadius:20,padding:16,border:"1px solid "+C.bd,cursor:onClick?"pointer":"default",...style}}>{children}</div>}
 function VB({v,s}){return <span style={{display:"inline-flex",alignItems:"center",gap:s?4:6,background:vb(v),color:vc(v),borderRadius:20,padding:s?"2px 8px":"4px 11px",fontSize:s?9:10,fontWeight:700,fontFamily:F,letterSpacing:.4,textTransform:"uppercase"}}><span style={{fontSize:s?8:11}}>{vi(v)}</span>{vl(v)}</span>}
-function MB({value,max,color}){return <div style={{height:4,borderRadius:2,background:C.bgEl,overflow:"hidden"}}><div style={{height:4,borderRadius:2,background:color,width:Math.min((value/max)*100,100)+"%",transition:"width .8s ease-out"}}/></div>}
+function MB({val,max,color}){return <div style={{height:4,borderRadius:2,background:C.el,overflow:"hidden"}}><div style={{height:4,borderRadius:2,background:color,width:Math.min((val/max)*100,100)+"%",transition:"width .8s ease-out"}}/></div>}
+function Spinner(){return <div style={{textAlign:"center",padding:32}}><div style={{width:28,height:28,border:"3px solid "+C.el,borderTopColor:C.pr,borderRadius:14,margin:"0 auto",animation:"spin .7s linear infinite"}}/></div>}
+function Err({msg}){return <Cd style={{background:C.adjB,border:"1px solid "+C.adj+"30",marginBottom:12}}><p style={{fontFamily:F,fontSize:13,color:C.tx}}>{msg}</p></Cd>}
 
 /* ═══ DASHBOARD ═══ */
 function Dash({journal,isExp,onTog,onNav}){
-  var t=tot(journal),remP=prof.protG-t.p;
-  var tip=remP>40?remP+"g de protéines restantes. Vise poulet, poisson ou œufs au prochain repas.":remP>0?"Plus que "+remP+"g de protéines. Un yaourt grec suffit.":"Protéines OK ! Gère les "+(prof.calG-t.c)+" kcal restantes avec un repas léger.";
-  return <div style={{padding:"env(safe-area-inset-top, 12px) 16px "+(NAV_H+16)+"px",overflowY:"auto",height:"100%"}}>
-    <div style={{paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><h1 style={{fontFamily:F,fontSize:24,fontWeight:700,color:C.tx}}>Bonjour {prof.name}</h1><p style={{fontFamily:F,fontSize:12,color:C.txM,marginTop:3}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
-      <div onClick={function(){onNav("profile")}} style={{width:38,height:38,borderRadius:19,background:C.bgEl,border:"1px solid "+C.brd,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:16}}>👤</div>
+  var t=sum(journal),remP=P.protG-t.p;
+  var tip=remP>40?remP+"g de protéines restantes. Vise poulet, poisson ou œufs au prochain repas."
+    :remP>0?"Plus que "+remP+"g de protéines. Un yaourt grec ou fromage blanc suffit."
+    :"Protéines OK ! Gère les "+(P.calG-t.c)+" kcal restantes avec un repas léger.";
+  return <div className="scroll-area nav-pad" style={{padding:"0 16px"}}>
+    <div className="safe-top" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <div><h1 style={{fontFamily:F,fontSize:24,fontWeight:700,color:C.tx}}>Bonjour {P.name}</h1><p style={{fontFamily:F,fontSize:12,color:C.tm,marginTop:3}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
+      <div onClick={function(){onNav("profile")}} style={{width:38,height:38,borderRadius:19,background:C.el,border:"1px solid "+C.bd,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:16}}>👤</div>
     </div>
-    {/* Mode switch */}
-    <div onClick={onTog} style={{background:C.bgEl,borderRadius:28,padding:3,cursor:"pointer",display:"flex",height:48,position:"relative",border:"1px solid "+C.brd,userSelect:"none",marginBottom:4}}>
-      <div style={{position:"absolute",top:3,width:"calc(50% - 3px)",height:42,background:C.pr,borderRadius:24,boxShadow:"0 0 16px "+C.prG,left:isExp?3:"50%",transition:"left .3s cubic-bezier(.4,0,.2,1)"}}/>
-      {[{ic:"⚡",lb:"Express",a:isExp},{ic:"🍳",lb:"Cuisine",a:!isExp}].map(function(m,i){return <div key={i} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,zIndex:1,color:m.a?"#fff":C.txM}}><span style={{fontSize:14}}>{m.ic}</span><span style={{fontFamily:F,fontSize:13,fontWeight:600}}>{m.lb}</span></div>})}
+    {/* Mode */}
+    <div onClick={onTog} style={{background:C.el,borderRadius:28,padding:3,cursor:"pointer",display:"flex",height:48,position:"relative",border:"1px solid "+C.bd,userSelect:"none",marginBottom:4}}>
+      <div style={{position:"absolute",top:3,width:"calc(50% - 3px)",height:42,background:C.pr,borderRadius:24,boxShadow:"0 0 16px "+C.pg,left:isExp?3:"50%",transition:"left .3s cubic-bezier(.4,0,.2,1)"}}/>
+      {[{ic:"⚡",lb:"Express",a:isExp},{ic:"🍳",lb:"Cuisine",a:!isExp}].map(function(m,i){return <div key={i} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,zIndex:1,color:m.a?"#fff":C.tm}}><span style={{fontSize:14}}>{m.ic}</span><span style={{fontFamily:F,fontSize:13,fontWeight:600}}>{m.lb}</span></div>})}
     </div>
     {/* Gauges */}
-    <div style={{display:"flex",justifyContent:"center",margin:"24px 0 4px"}}><CG value={t.c} max={prof.calG} color={C.cal} label="Calories" unit="kcal" size={160} sw={12} hero/></div>
-    <div style={{display:"flex",justifyContent:"space-around",margin:"4px 0 20px"}}><CG value={t.p} max={prof.protG} color={C.prot} label="Protéines" unit="g" size={80} sw={6}/><CG value={t.cb} max={prof.carbG} color={C.carb} label="Glucides" unit="g" size={80} sw={6}/><CG value={t.f} max={prof.fatG} color={C.fat} label="Lipides" unit="g" size={80} sw={6}/></div>
+    <div style={{display:"flex",justifyContent:"center",margin:"24px 0 4px"}}><CG value={t.c} max={P.calG} color={C.cal} label="Calories" unit="kcal" size={160} sw={12} hero/></div>
+    <div style={{display:"flex",justifyContent:"space-around",margin:"4px 0 20px"}}><CG value={t.p} max={P.protG} color={C.prot} label="Protéines" unit="g" size={80} sw={6}/><CG value={t.cb} max={P.carbG} color={C.carb} label="Glucides" unit="g" size={80} sw={6}/><CG value={t.f} max={P.fatG} color={C.fat} label="Lipides" unit="g" size={80} sw={6}/></div>
     {/* Scan */}
-    <div style={{display:"flex",justifyContent:"center",margin:"16px 0 4px"}}><div onClick={function(){onNav("scan")}} style={{width:76,height:76,borderRadius:38,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",boxShadow:"0 8px 24px "+C.prG,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:26}}>📸</div></div>
+    <div style={{display:"flex",justifyContent:"center",margin:"16px 0 4px"}}><div onClick={function(){onNav("scan")}} style={{width:76,height:76,borderRadius:38,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",boxShadow:"0 8px 24px "+C.pg,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:26}}>📸</div></div>
     <p style={{textAlign:"center",fontFamily:F,fontSize:13,fontWeight:600,color:C.tx}}>Scan Flash</p>
-    <p style={{textAlign:"center",fontFamily:F,fontSize:11,color:C.txM,margin:"2px 0 16px"}}>Scanner · Rechercher · Comparer</p>
+    <p style={{textAlign:"center",fontFamily:F,fontSize:11,color:C.tm,margin:"2px 0 16px"}}>Scanner · Rechercher · Comparer</p>
     {/* Coach */}
-    <Cd style={{background:C.prS,border:"1px solid "+C.pr+"30",marginBottom:16}}><div style={{display:"flex",gap:12}}><span style={{fontSize:20,marginTop:1}}>🧠</span><div><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.pr,textTransform:"uppercase",letterSpacing:.6,marginBottom:5}}>Coach</p><p style={{fontFamily:F,fontSize:13,color:C.tx,lineHeight:1.55}}>{tip}</p></div></div></Cd>
-    {/* Quick add */}
-    <p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Ajouter en 1 tap</p>
-    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>{favs.map(function(f,i){return <div key={i} style={{minWidth:110,background:C.bgEl,borderRadius:C.rs,padding:"10px 12px",border:"1px solid "+C.brd,cursor:"pointer",flexShrink:0}}><span style={{fontSize:20}}>{f.em}</span><p style={{fontFamily:F,fontSize:11,fontWeight:600,color:C.tx,margin:"4px 0 2px",whiteSpace:"nowrap"}}>{f.n}</p><p style={{fontFamily:F,fontSize:10,color:C.txM}}>{f.p}g prot · {f.cal} kcal</p></div>})}</div>
+    <Cd style={{background:C.ps,border:"1px solid "+C.pr+"30",marginBottom:16}}><div style={{display:"flex",gap:12}}><span style={{fontSize:20,marginTop:1}}>🧠</span><div><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.pr,textTransform:"uppercase",letterSpacing:.6,marginBottom:5}}>Coach</p><p style={{fontFamily:F,fontSize:13,color:C.tx,lineHeight:1.55}}>{tip}</p></div></div></Cd>
+    {/* Quick */}
+    <p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Ajouter en 1 tap</p>
+    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>{favs.map(function(f,i){return <div key={i} style={{minWidth:110,background:C.el,borderRadius:14,padding:"10px 12px",border:"1px solid "+C.bd,cursor:"pointer",flexShrink:0}}><span style={{fontSize:20}}>{f.e}</span><p style={{fontFamily:F,fontSize:11,fontWeight:600,color:C.tx,margin:"4px 0 2px",whiteSpace:"nowrap"}}>{f.n}</p><p style={{fontFamily:F,fontSize:10,color:C.tm}}>{f.p}g prot · {f.cal} kcal</p></div>})}</div>
     {/* Jow */}
-    <Cd onClick={function(){onNav("jow")}} style={{marginTop:14,display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}><span style={{fontSize:20}}>✨</span><div style={{flex:1}}><p style={{fontFamily:F,fontSize:13,fontWeight:600,color:C.tx}}>Hacks Jow</p><p style={{fontFamily:F,fontSize:11,color:C.txM,marginTop:2}}>Optimise une recette Jow</p></div><span style={{color:C.txM}}>›</span></Cd>
+    <Cd onClick={function(){onNav("jow")}} style={{marginTop:14,marginBottom:16,display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}><span style={{fontSize:20}}>✨</span><div style={{flex:1}}><p style={{fontFamily:F,fontSize:13,fontWeight:600,color:C.tx}}>Hacks Jow</p><p style={{fontFamily:F,fontSize:11,color:C.tm,marginTop:2}}>Optimise une recette Jow</p></div><span style={{color:C.tm}}>›</span></Cd>
   </div>;
 }
 
 /* ═══ SCAN ═══ */
-function Scan({onBack,onAdd}){
-  var _b=useState(""),bc=_b[0],sBc=_b[1],_q=useState(""),q=_q[0],sQ=_q[1],_l=useState(false),ld=_l[0],sLd=_l[1],_p=useState(null),prod=_p[0],sProd=_p[1],_r=useState(null),res=_r[0],sRes=_r[1],_e=useState(null),er=_e[0],sEr=_e[1];
-  var lookup=function(code){if(!code||!code.trim())return;sLd(true);sProd(null);sEr(null);sRes(null);
-    fetch("https://world.openfoodfacts.org/api/v2/product/"+code.trim()+".json?fields=product_name,brands,nutriments,nutriscore_grade").then(function(r){return r.json()}).then(function(d){
-      if(d.status===1&&d.product){var p=d.product,n=p.nutriments||{},pr=Math.round(n.proteins_100g||0),ca=Math.round(n["energy-kcal_100g"]||0),rt=ca>0?parseFloat(((pr/ca)*100).toFixed(1)):0;
-        sProd({name:p.product_name||"Produit",brand:p.brands||"",prot:pr,cal:ca,ratio:rt,fat:Math.round(n.fat_100g||0),carbs:Math.round(n.carbohydrates_100g||0),sugars:Math.round(n.sugars_100g||0),fiber:Math.round(n.fiber_100g||0),score:p.nutriscore_grade||"?",v:rt>=8?"ideal":rt>=4?"adjust":"notOptimal"});
-      }else sEr("Produit non trouvé.");sLd(false);
-    }).catch(function(){sEr("Erreur réseau.");sLd(false);});};
-  var search=function(qq){if(!qq||!qq.trim())return;sLd(true);sProd(null);sEr(null);sRes(null);
-    fetch("https://world.openfoodfacts.org/cgi/search.pl?search_terms="+encodeURIComponent(qq.trim())+"&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,brands,nutriments,nutriscore_grade").then(function(r){return r.json()}).then(function(d){
-      if(d.products&&d.products.length>0){sRes(d.products.map(function(p){var n=p.nutriments||{},pr=Math.round(n.proteins_100g||0),ca=Math.round(n["energy-kcal_100g"]||0),rt=ca>0?parseFloat(((pr/ca)*100).toFixed(1)):0;return{code:p.code,name:p.product_name||"?",brand:p.brands||"",prot:pr,cal:ca,ratio:rt,score:p.nutriscore_grade||"?",v:rt>=8?"ideal":rt>=4?"adjust":"notOptimal"}}));}else sEr("Aucun résultat.");sLd(false);
-    }).catch(function(){sEr("Erreur réseau.");sLd(false);});};
+function ScanScr({onBack,onAdd}){
+  var s1=useState(""),bc=s1[0],sBc=s1[1];
+  var s2=useState(""),q=s2[0],sQ=s2[1];
+  var s3=useState(false),ld=s3[0],sLd=s3[1];
+  var s4=useState(null),prod=s4[0],sProd=s4[1];
+  var s5=useState(null),res=s5[0],sRes=s5[1];
+  var s6=useState(null),err=s6[0],sErr=s6[1];
 
-  return <div style={{padding:"env(safe-area-inset-top, 12px) 16px "+(NAV_H+16)+"px",overflowY:"auto",height:"100%"}}>
-    <div style={{paddingTop:12,display:"flex",alignItems:"center",gap:12,marginBottom:20}}><div onClick={onBack} style={{cursor:"pointer",fontSize:18,color:C.txS}}>←</div><h2 style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx}}>Scanner · Rechercher</h2></div>
-    <Cd style={{marginBottom:10,padding:14}}><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Code-barres</p><div style={{display:"flex",gap:8}}><input value={bc} onChange={function(e){sBc(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")lookup(bc)}} placeholder="3033490004750" style={{flex:1,padding:11,borderRadius:C.rx,border:"1px solid "+C.brd,fontFamily:F,fontSize:14,outline:"none",background:C.bgIn,color:C.tx}}/><button onClick={function(){lookup(bc)}} style={{background:C.pr,color:"#fff",border:"none",borderRadius:C.rx,padding:"0 16px",fontWeight:600,cursor:"pointer",fontSize:15}}>📷</button></div></Cd>
-    <Cd style={{marginBottom:14,padding:14}}><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Recherche par nom</p><div style={{display:"flex",gap:8}}><input value={q} onChange={function(e){sQ(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")search(q)}} placeholder="skyr, thon, poulet..." style={{flex:1,padding:11,borderRadius:C.rx,border:"1px solid "+C.brd,fontFamily:F,fontSize:14,outline:"none",background:C.bgIn,color:C.tx}}/><button onClick={function(){search(q)}} style={{background:C.pr,color:"#fff",border:"none",borderRadius:C.rx,padding:"0 16px",fontWeight:600,cursor:"pointer"}}>🔍</button></div></Cd>
-    {ld&&<div style={{textAlign:"center",padding:32}}><div style={{width:28,height:28,border:"3px solid "+C.bgEl,borderTopColor:C.pr,borderRadius:14,margin:"0 auto 10px",animation:"spin .7s linear infinite"}}/><p style={{fontFamily:F,fontSize:13,color:C.txM}}>Analyse…</p></div>}
-    {er&&<Cd style={{background:C.adjBg,border:"1px solid "+C.adj+"30",marginBottom:12}}><p style={{fontFamily:F,fontSize:13,color:C.tx}}>{er}</p></Cd>}
+  var lookup=function(code){
+    if(!code||!code.trim())return;sLd(true);sProd(null);sErr(null);sRes(null);
+    fetch("https://world.openfoodfacts.org/api/v2/product/"+code.trim()+".json?fields=product_name,brands,nutriments,nutriscore_grade")
+    .then(function(r){return r.json()}).then(function(d){
+      if(d.status===1&&d.product){
+        var p=d.product,n=p.nutriments||{};
+        var pr=Math.round(n.proteins_100g||0),ca=Math.round(n["energy-kcal_100g"]||0);
+        var rt=ca>0?parseFloat(((pr/ca)*100).toFixed(1)):0;
+        sProd({name:p.product_name||"Produit",brand:p.brands||"",prot:pr,cal:ca,ratio:rt,
+          fat:Math.round(n.fat_100g||0),carbs:Math.round(n.carbohydrates_100g||0),
+          sugars:Math.round(n.sugars_100g||0),fiber:Math.round(n.fiber_100g||0),
+          score:p.nutriscore_grade||"?",v:rt>=8?"ideal":rt>=4?"adjust":"notOptimal"});
+      }else{sErr("Produit non trouvé pour ce code-barres.");}
+      sLd(false);
+    }).catch(function(e){sErr("Erreur réseau : "+e.message);sLd(false);});
+  };
+  var search=function(qq){
+    if(!qq||!qq.trim())return;sLd(true);sProd(null);sErr(null);sRes(null);
+    fetch("https://world.openfoodfacts.org/cgi/search.pl?search_terms="+encodeURIComponent(qq.trim())+"&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,brands,nutriments,nutriscore_grade")
+    .then(function(r){return r.json()}).then(function(d){
+      if(d.products&&d.products.length>0){
+        sRes(d.products.filter(function(p){return p.product_name}).map(function(p){
+          var n=p.nutriments||{},pr=Math.round(n.proteins_100g||0),ca=Math.round(n["energy-kcal_100g"]||0);
+          var rt=ca>0?parseFloat(((pr/ca)*100).toFixed(1)):0;
+          return{code:p.code,name:p.product_name,brand:p.brands||"",prot:pr,cal:ca,ratio:rt,score:p.nutriscore_grade||"?",v:rt>=8?"ideal":rt>=4?"adjust":"notOptimal"};
+        }));
+      }else{sErr("Aucun résultat pour \""+qq+"\".");}
+      sLd(false);
+    }).catch(function(e){sErr("Erreur réseau : "+e.message);sLd(false);});
+  };
+
+  return <div className="scroll-area nav-pad" style={{padding:"0 16px"}}>
+    <div className="safe-top" style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+      <div onClick={onBack} style={{cursor:"pointer",fontSize:18,color:C.ts}}>←</div>
+      <h2 style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx}}>Scanner · Rechercher</h2>
+    </div>
+    <Cd style={{marginBottom:10,padding:14}}>
+      <p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Code-barres</p>
+      <div style={{display:"flex",gap:8}}>
+        <input value={bc} onChange={function(e){sBc(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")lookup(bc)}} placeholder="3033490004750" style={{flex:1,padding:11,borderRadius:10,border:"1px solid "+C.bd,fontFamily:F,fontSize:14,outline:"none",background:C.inp,color:C.tx}}/>
+        <button onClick={function(){lookup(bc)}} style={{background:C.pr,color:"#fff",border:"none",borderRadius:10,padding:"0 16px",fontWeight:600,cursor:"pointer",fontSize:15}}>📷</button>
+      </div>
+    </Cd>
+    <Cd style={{marginBottom:14,padding:14}}>
+      <p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Recherche par nom</p>
+      <div style={{display:"flex",gap:8}}>
+        <input value={q} onChange={function(e){sQ(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")search(q)}} placeholder="skyr, thon, poulet..." style={{flex:1,padding:11,borderRadius:10,border:"1px solid "+C.bd,fontFamily:F,fontSize:14,outline:"none",background:C.inp,color:C.tx}}/>
+        <button onClick={function(){search(q)}} style={{background:C.pr,color:"#fff",border:"none",borderRadius:10,padding:"0 16px",fontWeight:600,cursor:"pointer"}}>🔍</button>
+      </div>
+    </Cd>
+    {ld&&<Spinner/>}
+    {err&&<Err msg={err}/>}
     {prod&&<Cd style={{marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><VB v={prod.v}/><span style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,background:C.bgEl,padding:"3px 8px",borderRadius:8}}>{prod.score.toUpperCase()}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><VB v={prod.v}/><span style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,background:C.el,padding:"3px 8px",borderRadius:8}}>Nutri-Score {prod.score.toUpperCase()}</span></div>
       <h3 style={{fontFamily:F,fontSize:17,fontWeight:700,color:C.tx,marginBottom:2}}>{prod.name}</h3>
-      {prod.brand&&<p style={{fontFamily:F,fontSize:12,color:C.txM,marginBottom:14}}>{prod.brand}</p>}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:12}}>{[{l:"Protéines",v:prod.prot+"g",c:C.prot},{l:"Calories",v:""+prod.cal,c:C.cal},{l:"Ratio P/C",v:""+prod.ratio,c:prod.ratio>=8?C.ok:prod.ratio>=4?C.adj:C.bad}].map(function(m,i){return <div key={i} style={{textAlign:"center",padding:10,background:C.bgEl,borderRadius:C.rx}}><div style={{fontFamily:F,fontSize:18,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontFamily:F,fontSize:9,fontWeight:600,color:C.txM,textTransform:"uppercase",marginTop:2}}>{m.l}</div></div>})}</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>{[{l:"Lipides",v:prod.fat},{l:"Glucides",v:prod.carbs},{l:"Sucres",v:prod.sugars},{l:"Fibres",v:prod.fiber}].map(function(d,i){return <span key={i} style={{fontFamily:F,fontSize:12,color:C.txM}}><span style={{fontWeight:600,color:C.txS}}>{d.v}g</span> {d.l}</span>})}</div>
-      <p style={{fontFamily:F,fontSize:10,color:C.txM,fontStyle:"italic",marginBottom:12}}>Pour 100g · OpenFoodFacts</p>
-      <button onClick={function(){onAdd({name:prod.name,p:prod.prot,cal:prod.cal,cb:prod.carbs,f:prod.fat,v:prod.v,em:"🍽️"})}} style={{width:"100%",padding:13,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",color:"#fff",border:"none",borderRadius:C.rs,fontFamily:F,fontSize:14,fontWeight:600,cursor:"pointer"}}>+ Ajouter au journal</button>
+      {prod.brand&&<p style={{fontFamily:F,fontSize:12,color:C.tm,marginBottom:14}}>{prod.brand}</p>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:12}}>
+        {[{l:"Protéines",v:prod.prot+"g",c:C.prot},{l:"Calories",v:""+prod.cal,c:C.cal},{l:"Ratio P/C",v:""+prod.ratio,c:prod.ratio>=8?C.ok:prod.ratio>=4?C.adj:C.bad}].map(function(m,i){return <div key={i} style={{textAlign:"center",padding:10,background:C.el,borderRadius:10}}><div style={{fontFamily:F,fontSize:18,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontFamily:F,fontSize:9,fontWeight:600,color:C.tm,textTransform:"uppercase",marginTop:2}}>{m.l}</div></div>})}
+      </div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+        {[{l:"Lipides",v:prod.fat},{l:"Glucides",v:prod.carbs},{l:"Sucres",v:prod.sugars},{l:"Fibres",v:prod.fiber}].map(function(d,i){return <span key={i} style={{fontFamily:F,fontSize:12,color:C.tm}}><span style={{fontWeight:600,color:C.ts}}>{d.v}g</span> {d.l}</span>})}
+      </div>
+      <p style={{fontFamily:F,fontSize:10,color:C.tm,fontStyle:"italic",marginBottom:12}}>Pour 100g · OpenFoodFacts</p>
+      <button onClick={function(){onAdd({n:prod.name,p:prod.prot,cal:prod.cal,cb:prod.carbs,f:prod.fat,v:prod.v,e:"🍽️"})}} style={{width:"100%",padding:13,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",color:"#fff",border:"none",borderRadius:14,fontFamily:F,fontSize:14,fontWeight:600,cursor:"pointer"}}>+ Ajouter au journal</button>
     </Cd>}
-    {res&&res.length>0&&<div><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>{res.length} résultats</p>
-      {res.map(function(p,i){return <Cd key={i} onClick={function(){lookup(p.code)}} style={{marginBottom:8,padding:12,cursor:"pointer"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{flex:1}}><div style={{marginBottom:4}}><VB v={p.v} s/></div><p style={{fontFamily:F,fontSize:13,fontWeight:600,color:C.tx,marginBottom:2}}>{p.name}</p><p style={{fontFamily:F,fontSize:11,color:C.txM}}>{p.brand} · {p.prot}g prot · {p.cal} kcal</p></div><div style={{textAlign:"right"}}><div style={{fontFamily:F,fontSize:17,fontWeight:700,color:p.ratio>=8?C.ok:p.ratio>=4?C.adj:C.bad}}>{p.ratio}</div><div style={{fontFamily:F,fontSize:9,color:C.txM}}>g/100kcal</div></div></div></Cd>})}
+    {res&&res.length>0&&<div>
+      <p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>{res.length} résultats</p>
+      {res.map(function(p,i){return <Cd key={i} onClick={function(){lookup(p.code)}} style={{marginBottom:8,padding:12,cursor:"pointer"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{flex:1}}><div style={{marginBottom:4}}><VB v={p.v} s/></div><p style={{fontFamily:F,fontSize:13,fontWeight:600,color:C.tx,marginBottom:2}}>{p.name}</p><p style={{fontFamily:F,fontSize:11,color:C.tm}}>{p.brand} · {p.prot}g prot · {p.cal} kcal</p></div>
+          <div style={{textAlign:"right",marginLeft:12}}><div style={{fontFamily:F,fontSize:17,fontWeight:700,color:p.ratio>=8?C.ok:p.ratio>=4?C.adj:C.bad}}>{p.ratio}</div><div style={{fontFamily:F,fontSize:9,color:C.tm}}>g/100kcal</div></div>
+        </div>
+      </Cd>})}
     </div>}
-    {!prod&&!res&&!ld&&!er&&<div style={{textAlign:"center",padding:"36px 16px"}}><span style={{fontSize:40}}>🥗</span><p style={{fontFamily:F,fontSize:14,fontWeight:600,color:C.tx,marginTop:12}}>Recherche un produit</p><p style={{fontFamily:F,fontSize:12,color:C.txM,lineHeight:1.5}}>Ratio P/C : au-dessus de 8 = idéal<br/>4–8 = correct · en dessous = à éviter</p></div>}
+    {!prod&&!res&&!ld&&!err&&<div style={{textAlign:"center",padding:"36px 16px"}}><span style={{fontSize:40}}>🥗</span><p style={{fontFamily:F,fontSize:14,fontWeight:600,color:C.tx,marginTop:12}}>Recherche un produit</p><p style={{fontFamily:F,fontSize:12,color:C.tm,lineHeight:1.5}}>Ratio P/C : au-dessus de 8 = idéal<br/>4–8 = correct · en dessous = à éviter</p></div>}
   </div>;
 }
 
 /* ═══ COACH ═══ */
-function Coach({journal}){
-  var _m=useState([{role:"assistant",text:"Salut "+prof.name+" ! Je suis ton coach nutrition. Pose-moi n'importe quelle question — je connais tes objectifs et ce que tu as mangé aujourd'hui. 💪"}]),msgs=_m[0],sM=_m[1];
-  var _i=useState(""),inp=_i[0],sI=_i[1];
-  var _l=useState(false),ld=_l[0],sL=_l[1];
-  var chatRef=useRef(null),inpRef=useRef(null);
-  useEffect(function(){if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[msgs,ld]);
+function CoachScr({journal}){
+  var s1=useState([{r:"a",tx:"Salut "+P.name+" ! Je suis ton coach nutrition. Pose-moi n'importe quelle question — je connais tes objectifs et ce que tu as mangé aujourd'hui. 💪"}]),msgs=s1[0],sM=s1[1];
+  var s2=useState(""),inp=s2[0],sI=s2[1];
+  var s3=useState(false),ld=s3[0],sL=s3[1];
+  var cRef=useRef(null);
+  useEffect(function(){if(cRef.current)cRef.current.scrollTop=cRef.current.scrollHeight},[msgs,ld]);
 
-  var t=tot(journal);
-  var jTxt=journal.map(function(e){return e.time+" — "+e.name+" ("+e.p+"g prot, "+e.cal+" kcal, "+e.cb+"g gluc, "+e.f+"g lip)"}).join("\n");
-  var sys="Tu es le coach nutrition intégré dans l'app Eatsa. Tu parles en français, de manière directe, concise et bienveillante. Tu tutoies l'utilisateur.\n\nPROFIL :\n- Nom : "+prof.name+"\n- Objectif : "+prof.obj+"\n- Activité : "+prof.act+"\n- Objectifs/jour : "+prof.protG+"g prot, "+prof.calG+" kcal, "+prof.carbG+"g gluc, "+prof.fatG+"g lip\n\nMANGÉ AUJOURD'HUI :\n"+(jTxt||"Rien encore.")+"\n\nTOTAUX : "+t.p+"g prot (obj "+prof.protG+"g), "+t.c+" kcal (obj "+prof.calG+"), "+t.cb+"g gluc, "+t.f+"g lip\nRESTE : "+(prof.protG-t.p)+"g prot, "+(prof.calG-t.c)+" kcal\n\nRÈGLES :\n- 2-4 phrases max sauf demande de détail\n- Personnalise avec le contexte du jour\n- Pour un aliment : verdict (idéal/à ajuster/à éviter) basé sur ratio prot/cal + reste de la journée\n- Ne parle JAMAIS de prix/budget\n- Motivant sans être niais";
+  var t=sum(journal);
+  var jTxt=journal.map(function(x){return x.t+" — "+x.n+" ("+x.p+"g prot, "+x.cal+" kcal)"}).join("\n");
+  var sys="Tu es le coach nutrition de l'app Eatsa. Français, direct, concis, bienveillant. Tu tutoies.\n\nPROFIL : "+P.name+", objectif "+P.obj+", activité "+P.act+"\nObjectifs/jour : "+P.protG+"g prot, "+P.calG+" kcal, "+P.carbG+"g gluc, "+P.fatG+"g lip\n\nMANGÉ AUJOURD'HUI :\n"+(jTxt||"Rien.")+"\nTotaux : "+t.p+"g prot (obj "+P.protG+"), "+t.c+" kcal (obj "+P.calG+")\nReste : "+(P.protG-t.p)+"g prot, "+(P.calG-t.c)+" kcal\n\nRÈGLES : 2-4 phrases max. Personnalise avec le contexte du jour. Pour un aliment : verdict (idéal/à ajuster/à éviter) + ratio prot/cal. Jamais de prix/budget. Motivant sans être niais.";
 
   var send=function(text){
     if(!text||!text.trim()||ld)return;
-    var uMsg={role:"user",text:text.trim()};
-    var newM=msgs.concat([uMsg]);sM(newM);sI("");sL(true);
-    var apiM=[];for(var i=0;i<newM.length;i++){if(i===0&&newM[i].role==="assistant")continue;apiM.push({role:newM[i].role==="assistant"?"assistant":"user",content:newM[i].text});}
-
-    fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,system:sys,messages:apiM})})
-      .then(function(r){return r.json()}).then(function(data){
-        var reply="";if(data.content){for(var i=0;i<data.content.length;i++){if(data.content[i].type==="text")reply+=data.content[i].text;}}
-        if(!reply)reply="Je n'ai pas pu répondre. Réessaie !";
-        sM(function(prev){return prev.concat([{role:"assistant",text:reply}])});sL(false);
-      }).catch(function(){sM(function(prev){return prev.concat([{role:"assistant",text:"Erreur de connexion. Vérifie que ta clé API est configurée dans Netlify (Settings > Environment variables > ANTHROPIC_API_KEY)."}])});sL(false);});
+    var newM=msgs.concat([{r:"u",tx:text.trim()}]);
+    sM(newM);sI("");sL(true);
+    var apiM=[];
+    for(var i=0;i<newM.length;i++){
+      if(i===0&&newM[i].r==="a")continue;
+      apiM.push({role:newM[i].r==="a"?"assistant":"user",content:newM[i].tx});
+    }
+    fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:sys,max_tokens:500,messages:apiM})})
+    .then(function(r){return r.json()}).then(function(data){
+      var reply="";
+      if(data.content){for(var i=0;i<data.content.length;i++){if(data.content[i].type==="text")reply+=data.content[i].text;}}
+      if(data.error)reply="Erreur : "+data.error;
+      if(!reply)reply="Je n'ai pas pu répondre. Réessaie.";
+      sM(function(prev){return prev.concat([{r:"a",tx:reply}])});sL(false);
+    }).catch(function(e){sM(function(prev){return prev.concat([{r:"a",tx:"Erreur de connexion : "+e.message}])});sL(false);});
   };
-
-  var sugs=["Je peux manger un kebab ce soir ?","Qu'est-ce que je mange ce soir ?","Un McDo ça passe ?","C'est quoi un bon snack protéiné ?","Pâtes carbo, bonne idée ?","Pizza ce soir ?"];
+  var sugs=["Je peux manger un kebab ?","Qu'est-ce que je mange ce soir ?","Un McDo ça passe ?","Snack protéiné rapide ?","Pâtes carbo, bonne idée ?","Pizza ce soir ?"];
 
   return <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     {/* Header */}
-    <div style={{padding:"env(safe-area-inset-top, 8px) 16px 10px",borderBottom:"1px solid "+C.brd,background:C.bgCard,flexShrink:0}}>
-      <div style={{paddingTop:8,display:"flex",alignItems:"center",gap:10}}>
+    <div className="safe-top" style={{padding:"0 16px 10px",borderBottom:"1px solid "+C.bd,background:C.card,flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{width:36,height:36,borderRadius:18,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🧠</div>
         <div><p style={{fontFamily:F,fontSize:15,fontWeight:700,color:C.tx}}>Coach Nutrition</p><p style={{fontFamily:F,fontSize:10,color:C.pr,fontWeight:600}}>Connaît tes objectifs et ta journée</p></div>
       </div>
     </div>
     {/* Messages */}
-    <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"14px 14px 8px",display:"flex",flexDirection:"column",gap:10}}>
-      {msgs.map(function(m,i){var u=m.role==="user";return <div key={i} style={{display:"flex",justifyContent:u?"flex-end":"flex-start",animation:"fadeIn .3s ease-out"}}>
-        <div style={{maxWidth:"82%",padding:"11px 15px",borderRadius:u?"18px 18px 4px 18px":"18px 18px 18px 4px",background:u?C.pr:C.bgCard,color:u?"#fff":C.tx,fontFamily:F,fontSize:14,lineHeight:1.5,border:u?"none":"1px solid "+C.brd,whiteSpace:"pre-wrap"}}>{m.text}</div>
+    <div ref={cRef} style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"14px 14px 8px",display:"flex",flexDirection:"column",gap:10}}>
+      {msgs.map(function(m,i){var u=m.r==="u";return <div key={i} style={{display:"flex",justifyContent:u?"flex-end":"flex-start",animation:"fadeIn .3s ease-out"}}>
+        <div style={{maxWidth:"82%",padding:"11px 15px",borderRadius:u?"18px 18px 4px 18px":"18px 18px 18px 4px",background:u?C.pr:C.card,color:u?"#fff":C.tx,fontFamily:F,fontSize:14,lineHeight:1.5,border:u?"none":"1px solid "+C.bd,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.tx}</div>
       </div>})}
-      {ld&&<div style={{display:"flex"}}><div style={{padding:"12px 18px",borderRadius:"18px 18px 18px 4px",background:C.bgCard,border:"1px solid "+C.brd,display:"flex",gap:5}}>
-        <div style={{width:6,height:6,borderRadius:3,background:C.txM,animation:"pulse 1s ease-in-out infinite"}}/><div style={{width:6,height:6,borderRadius:3,background:C.txM,animation:"pulse 1s ease-in-out .2s infinite"}}/><div style={{width:6,height:6,borderRadius:3,background:C.txM,animation:"pulse 1s ease-in-out .4s infinite"}}/>
+      {ld&&<div style={{display:"flex"}}><div style={{padding:"12px 18px",borderRadius:"18px 18px 18px 4px",background:C.card,border:"1px solid "+C.bd,display:"flex",gap:5}}>
+        <div style={{width:6,height:6,borderRadius:3,background:C.tm,animation:"pulse 1s infinite"}}/><div style={{width:6,height:6,borderRadius:3,background:C.tm,animation:"pulse 1s .2s infinite"}}/><div style={{width:6,height:6,borderRadius:3,background:C.tm,animation:"pulse 1s .4s infinite"}}/>
       </div></div>}
     </div>
     {/* Suggestions */}
-    {msgs.length<3&&<div style={{padding:"4px 14px 6px",display:"flex",gap:6,overflowX:"auto",flexShrink:0}}>{sugs.map(function(s,i){return <div key={i} onClick={function(){send(s)}} style={{flexShrink:0,padding:"7px 12px",borderRadius:18,background:C.bgEl,border:"1px solid "+C.brd,fontFamily:F,fontSize:12,color:C.txS,cursor:"pointer",whiteSpace:"nowrap"}}>{s}</div>})}</div>}
-    {/* Input */}
-    <div style={{padding:"8px 14px calc(env(safe-area-inset-bottom, 8px) + "+(NAV_H+4)+"px)",borderTop:"1px solid "+C.brd,background:C.bgCard,flexShrink:0}}>
+    {msgs.length<3&&<div style={{padding:"4px 14px 6px",display:"flex",gap:6,overflowX:"auto",flexShrink:0}}>{sugs.map(function(s,i){return <div key={i} onClick={function(){send(s)}} style={{flexShrink:0,padding:"7px 12px",borderRadius:18,background:C.el,border:"1px solid "+C.bd,fontFamily:F,fontSize:12,color:C.ts,cursor:"pointer",whiteSpace:"nowrap"}}>{s}</div>})}</div>}
+    {/* Input — className coach-input-pad gère le padding bottom pour la nav */}
+    <div className="coach-input-pad" style={{padding:"8px 14px 8px",borderTop:"1px solid "+C.bd,background:C.card,flexShrink:0}}>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <input ref={inpRef} value={inp} onChange={function(e){sI(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();send(inp);}}} placeholder="Demande-moi n'importe quoi…" style={{flex:1,padding:"11px 15px",borderRadius:22,border:"1px solid "+C.brd,fontFamily:F,fontSize:14,outline:"none",background:C.bgIn,color:C.tx}}/>
-        <button onClick={function(){send(inp)}} style={{width:42,height:42,borderRadius:21,background:inp.trim()&&!ld?"linear-gradient(135deg,"+C.pr+",#2DD48A)":C.bgEl,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:inp.trim()&&!ld?"pointer":"default",fontSize:17,flexShrink:0}}><span style={{color:inp.trim()&&!ld?"#fff":C.txM}}>↑</span></button>
+        <input value={inp} onChange={function(e){sI(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();send(inp);}}} placeholder="Demande-moi n'importe quoi…" style={{flex:1,padding:"11px 15px",borderRadius:22,border:"1px solid "+C.bd,fontFamily:F,fontSize:14,outline:"none",background:C.inp,color:C.tx}}/>
+        <button onClick={function(){send(inp)}} style={{width:42,height:42,borderRadius:21,background:inp.trim()&&!ld?"linear-gradient(135deg,"+C.pr+",#2DD48A)":C.el,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:inp.trim()&&!ld?"pointer":"default",fontSize:17,flexShrink:0}}><span style={{color:inp.trim()&&!ld?"#fff":C.tm}}>↑</span></button>
       </div>
     </div>
   </div>;
 }
 
 /* ═══ JOURNAL ═══ */
-function Journal({journal}){
-  var t=tot(journal);
-  return <div style={{padding:"env(safe-area-inset-top, 12px) 16px "+(NAV_H+16)+"px",overflowY:"auto",height:"100%"}}>
-    <h2 style={{paddingTop:12,fontFamily:F,fontSize:20,fontWeight:700,color:C.tx,marginBottom:14}}>Journal</h2>
-    <div style={{display:"flex",gap:8,marginBottom:18}}>{[{l:"Protéines",v:t.p+"/"+prof.protG+"g",pct:t.p/prof.protG,c:C.prot},{l:"Calories",v:t.c+"/"+prof.calG,pct:t.c/prof.calG,c:C.cal}].map(function(s,i){return <div key={i} style={{flex:1,background:C.bgCard,borderRadius:C.rs,padding:11,border:"1px solid "+C.brd}}><p style={{fontFamily:F,fontSize:9,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.4,marginBottom:4}}>{s.l}</p><p style={{fontFamily:F,fontSize:14,fontWeight:700,color:C.tx,marginBottom:6}}>{s.v}</p><MB value={s.pct*100} max={100} color={s.c}/></div>})}</div>
+function JournalScr({journal}){
+  var t=sum(journal);
+  return <div className="scroll-area nav-pad" style={{padding:"0 16px"}}>
+    <h2 className="safe-top" style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx,marginBottom:14}}>Journal</h2>
+    <div style={{display:"flex",gap:8,marginBottom:18}}>
+      {[{l:"Protéines",v:t.p+"/"+P.protG+"g",pct:t.p/P.protG,c:C.prot},{l:"Calories",v:t.c+"/"+P.calG,pct:t.c/P.calG,c:C.cal}].map(function(s,i){return <div key={i} style={{flex:1,background:C.card,borderRadius:14,padding:11,border:"1px solid "+C.bd}}><p style={{fontFamily:F,fontSize:9,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.4,marginBottom:4}}>{s.l}</p><p style={{fontFamily:F,fontSize:14,fontWeight:700,color:C.tx,marginBottom:6}}>{s.v}</p><MB val={s.pct*100} max={100} color={s.c}/></div>})}
+    </div>
     {journal.length===0?<div style={{textAlign:"center",padding:"44px 20px"}}><span style={{fontSize:40}}>📝</span><p style={{fontFamily:F,fontSize:14,fontWeight:600,color:C.tx,marginTop:12}}>Rien encore</p></div>
-    :journal.map(function(e,i){return <div key={e.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<journal.length-1?"1px solid "+C.div:"none"}}>
-      <div style={{width:40,height:40,borderRadius:12,background:vb(e.v),display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{e.em}</div>
-      <div style={{flex:1}}><p style={{fontFamily:F,fontSize:13,fontWeight:600,color:C.tx,marginBottom:2}}>{e.name}</p><p style={{fontFamily:F,fontSize:11,color:C.txM}}>{e.time} · <span style={{color:C.prot}}>{e.p}g prot</span> · {e.cal} kcal</p></div>
-      <VB v={e.v} s/>
+    :journal.map(function(x,i){return <div key={x.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<journal.length-1?"1px solid "+C.dv:"none"}}>
+      <div style={{width:40,height:40,borderRadius:12,background:vb(x.v),display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{x.e}</div>
+      <div style={{flex:1}}><p style={{fontFamily:F,fontSize:13,fontWeight:600,color:C.tx,marginBottom:2}}>{x.n}</p><p style={{fontFamily:F,fontSize:11,color:C.tm}}>{x.t} · <span style={{color:C.prot}}>{x.p}g prot</span> · {x.cal} kcal</p></div>
+      <VB v={x.v} s/>
     </div>})}
   </div>;
 }
 
 /* ═══ JOW ═══ */
-function Jow({onBack,journal}){
-  var _md=useState("name"),md=_md[0],sMd=_md[1],_nm=useState(""),nm=_nm[0],sNm=_nm[1],_pa=useState(""),pa=_pa[0],sPa=_pa[1],_id=useState(null),id=_id[0],sId=_id[1],_ip=useState(null),ip=_ip[0],sIp=_ip[1],_l=useState(false),ld=_l[0],sL=_l[1],_rs=useState(null),rs=_rs[0],sRs=_rs[1],_er=useState(null),er=_er[0],sEr=_er[1];
-  var fr=useRef(null),t=tot(journal);
-  var hImg=function(e){var f=e.target.files&&e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){sIp(ev.target.result);sId(ev.target.result.split(",")[1])};r.readAsDataURL(f)};
+function JowScr({onBack,journal}){
+  var s1=useState("name"),md=s1[0],sMd=s1[1];
+  var s2=useState(""),nm=s2[0],sNm=s2[1];
+  var s3=useState(""),pa=s3[0],sPa=s3[1];
+  var s4=useState(null),imgD=s4[0],sImgD=s4[1];
+  var s5=useState(null),imgP=s5[0],sImgP=s5[1];
+  var s6=useState(false),ld=s6[0],sLd=s6[1];
+  var s7=useState(null),rs=s7[0],sRs=s7[1];
+  var s8=useState(null),er=s8[0],sEr=s8[1];
+  var fRef=useRef(null);
+  var t=sum(journal);
+
+  var hImg=function(e){var f=e.target.files&&e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){sImgP(ev.target.result);sImgD(ev.target.result.split(",")[1])};r.readAsDataURL(f)};
+
   var go=function(){
-    if(md==="name"&&!nm.trim())return;if(md==="paste"&&!pa.trim())return;if(md==="photo"&&!id)return;
-    sL(true);sEr(null);sRs(null);
-    var ctx="Objectifs : "+prof.protG+"g prot, "+prof.calG+" kcal/j. Déjà mangé : "+t.p+"g prot, "+t.c+" kcal.";
-    var ins='Nutritionniste sportif. Analyse cette recette. Retourne UNIQUEMENT du JSON sans backticks : {"recipe_name":"","original_estimate":{"proteins_g":0,"calories":0},"verdict":"ideal ou adjust ou notOptimal","verdict_reason":"","optimizations":[{"action":"","reason":"","impact":""}],"optimized_estimate":{"proteins_g":0,"calories":0},"next_step":""}. 3-5 optimisations. Pas de prix.';
-    var content=[];if(md==="photo"&&id)content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:id}});
-    var pt=ctx+"\n"+ins+"\n";if(md==="name")pt+='Recette Jow : "'+nm+'"';else if(md==="paste")pt+="Ingrédients :\n"+pa;else pt+="Analyse la recette sur cette capture.";
+    if(md==="name"&&!nm.trim())return;if(md==="paste"&&!pa.trim())return;if(md==="photo"&&!imgD)return;
+    sLd(true);sEr(null);sRs(null);
+    var ctx="Objectifs : "+P.protG+"g prot, "+P.calG+" kcal/j. Déjà mangé : "+t.p+"g prot, "+t.c+" kcal.";
+    var ins='Nutritionniste sportif. Analyse cette recette. Retourne UNIQUEMENT du JSON valide sans backticks : {"recipe_name":"","original_estimate":{"proteins_g":0,"calories":0},"verdict":"ideal ou adjust ou notOptimal","verdict_reason":"","optimizations":[{"action":"","reason":"","impact":""}],"optimized_estimate":{"proteins_g":0,"calories":0},"next_step":""}. 3-5 optimisations concrètes. Pas de prix.';
+    var content=[];
+    if(md==="photo"&&imgD)content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:imgD}});
+    var pt=ctx+"\n"+ins+"\n";
+    if(md==="name")pt+="Recette Jow : \""+nm+"\"";
+    else if(md==="paste")pt+="Ingrédients :\n"+pa;
+    else pt+="Analyse la recette sur cette capture.";
     content.push({type:"text",text:pt});
-    fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:content}]})})
-      .then(function(r){return r.json()}).then(function(data){var raw="";if(data.content){for(var i=0;i<data.content.length;i++){if(data.content[i].type==="text")raw+=data.content[i].text}}raw=raw.replace(/```json/g,"").replace(/```/g,"").trim();sRs(JSON.parse(raw));sL(false)})
-      .catch(function(e){console.error(e);sEr("Analyse échouée. Vérifie ta clé API Netlify.");sL(false)});
+
+    fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_tokens:1000,messages:[{role:"user",content:content}]})})
+    .then(function(r){return r.json()}).then(function(data){
+      var raw="";
+      if(data.content){for(var i=0;i<data.content.length;i++){if(data.content[i].type==="text")raw+=data.content[i].text;}}
+      if(data.error){sEr("Erreur : "+data.error);sLd(false);return;}
+      if(!raw){sEr("Pas de réponse du serveur.");sLd(false);return;}
+      raw=raw.replace(/```json/g,"").replace(/```/g,"").trim();
+      // Extraire le JSON même s'il y a du texte autour
+      var jsonMatch=raw.match(/\{[\s\S]*\}/);
+      if(!jsonMatch){sEr("Réponse invalide. Réessaie.");sLd(false);return;}
+      try{sRs(JSON.parse(jsonMatch[0]));}catch(e){sEr("Erreur de parsing : "+e.message);};
+      sLd(false);
+    }).catch(function(e){sEr("Erreur réseau : "+e.message);sLd(false);});
   };
+
   var mds=[{id:"name",ic:"🔤",l:"Nom"},{id:"photo",ic:"📸",l:"Capture"},{id:"paste",ic:"📋",l:"Coller"}];
-  return <div style={{padding:"env(safe-area-inset-top, 12px) 16px "+(NAV_H+16)+"px",overflowY:"auto",height:"100%"}}>
-    <div style={{paddingTop:12,display:"flex",alignItems:"center",gap:12,marginBottom:14}}><div onClick={onBack} style={{cursor:"pointer",fontSize:18,color:C.txS}}>←</div><h2 style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx}}>Hacks Jow</h2></div>
-    <div style={{display:"flex",gap:6,marginBottom:12}}>{mds.map(function(m){return <div key={m.id} onClick={function(){sMd(m.id);sRs(null);sEr(null)}} style={{flex:1,padding:"9px 6px",borderRadius:C.rx,textAlign:"center",cursor:"pointer",background:md===m.id?C.pr:C.bgEl,color:md===m.id?"#fff":C.txM,border:"1px solid "+(md===m.id?C.pr:C.brd)}}><span style={{fontSize:17,display:"block"}}>{m.ic}</span><span style={{fontFamily:F,fontSize:10,fontWeight:600}}>{m.l}</span></div>})}</div>
+  return <div className="scroll-area nav-pad" style={{padding:"0 16px"}}>
+    <div className="safe-top" style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+      <div onClick={onBack} style={{cursor:"pointer",fontSize:18,color:C.ts}}>←</div>
+      <h2 style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx}}>Hacks Jow</h2>
+    </div>
+    <div style={{display:"flex",gap:6,marginBottom:12}}>
+      {mds.map(function(m){return <div key={m.id} onClick={function(){sMd(m.id);sRs(null);sEr(null)}} style={{flex:1,padding:"9px 6px",borderRadius:10,textAlign:"center",cursor:"pointer",background:md===m.id?C.pr:C.el,color:md===m.id?"#fff":C.tm,border:"1px solid "+(md===m.id?C.pr:C.bd)}}><span style={{fontSize:17,display:"block"}}>{m.ic}</span><span style={{fontFamily:F,fontSize:10,fontWeight:600}}>{m.l}</span></div>})}
+    </div>
     <Cd style={{marginBottom:12}}>
-      {md==="name"&&<input value={nm} onChange={function(e){sNm(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")go()}} placeholder="Poulet tikka masala, Pâtes carbo..." style={{width:"100%",padding:13,borderRadius:C.rx,border:"1px solid "+C.brd,fontFamily:F,fontSize:14,outline:"none",background:C.bgIn,color:C.tx,boxSizing:"border-box"}}/>}
-      {md==="photo"&&<div><input ref={fr} type="file" accept="image/*" onChange={hImg} style={{display:"none"}}/>{ip?<div style={{position:"relative"}}><img src={ip} style={{width:"100%",borderRadius:C.rx,maxHeight:240,objectFit:"cover"}}/><div onClick={function(){sIp(null);sId(null)}} style={{position:"absolute",top:8,right:8,width:26,height:26,borderRadius:13,background:"rgba(0,0,0,.6)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:12}}>✕</div></div>:<div onClick={function(){fr.current&&fr.current.click()}} style={{border:"2px dashed "+C.brd,borderRadius:C.rs,padding:"32px 16px",textAlign:"center",cursor:"pointer",background:C.bgIn}}><span style={{fontSize:30,display:"block",marginBottom:6}}>📸</span><p style={{fontFamily:F,fontSize:12,fontWeight:600,color:C.txS}}>Clique pour uploader</p></div>}</div>}
-      {md==="paste"&&<textarea value={pa} onChange={function(e){sPa(e.target.value)}} rows={5} placeholder="200g poulet\n20cl crème\n100g riz" style={{width:"100%",padding:13,borderRadius:C.rx,border:"1px solid "+C.brd,fontFamily:F,fontSize:14,outline:"none",background:C.bgIn,color:C.tx,resize:"vertical",boxSizing:"border-box"}}/>}
-      <button onClick={go} disabled={ld} style={{marginTop:10,width:"100%",padding:13,background:ld?C.txM:"linear-gradient(135deg,"+C.pr+",#2DD48A)",color:"#fff",border:"none",borderRadius:C.rs,fontFamily:F,fontSize:14,fontWeight:600,cursor:ld?"default":"pointer"}}>{ld?"Analyse…":"Analyser ✨"}</button>
+      {md==="name"&&<input value={nm} onChange={function(e){sNm(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")go()}} placeholder="Poulet tikka masala, Pâtes carbo..." style={{width:"100%",padding:13,borderRadius:10,border:"1px solid "+C.bd,fontFamily:F,fontSize:14,outline:"none",background:C.inp,color:C.tx,boxSizing:"border-box"}}/>}
+      {md==="photo"&&<div>
+        <input ref={fRef} type="file" accept="image/*" onChange={hImg} style={{display:"none"}}/>
+        {imgP?<div style={{position:"relative"}}><img src={imgP} style={{width:"100%",borderRadius:10,maxHeight:240,objectFit:"cover"}}/><div onClick={function(){sImgP(null);sImgD(null)}} style={{position:"absolute",top:8,right:8,width:26,height:26,borderRadius:13,background:"rgba(0,0,0,.6)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:12}}>✕</div></div>
+        :<div onClick={function(){fRef.current&&fRef.current.click()}} style={{border:"2px dashed "+C.bd,borderRadius:14,padding:"32px 16px",textAlign:"center",cursor:"pointer",background:C.inp}}><span style={{fontSize:30,display:"block",marginBottom:6}}>📸</span><p style={{fontFamily:F,fontSize:12,fontWeight:600,color:C.ts}}>Clique pour uploader</p></div>}
+      </div>}
+      {md==="paste"&&<textarea value={pa} onChange={function(e){sPa(e.target.value)}} rows={5} placeholder={"200g blancs de poulet\n20cl crème fraîche\n100g riz"} style={{width:"100%",padding:13,borderRadius:10,border:"1px solid "+C.bd,fontFamily:F,fontSize:14,outline:"none",background:C.inp,color:C.tx,resize:"vertical",boxSizing:"border-box"}}/>}
+      <button onClick={go} disabled={ld} style={{marginTop:10,width:"100%",padding:13,background:ld?C.tm:"linear-gradient(135deg,"+C.pr+",#2DD48A)",color:"#fff",border:"none",borderRadius:14,fontFamily:F,fontSize:14,fontWeight:600,cursor:ld?"default":"pointer"}}>{ld?"Analyse…":"Analyser ✨"}</button>
     </Cd>
-    {ld&&<div style={{textAlign:"center",padding:20}}><div style={{width:26,height:26,border:"3px solid "+C.bgEl,borderTopColor:C.pr,borderRadius:13,margin:"0 auto",animation:"spin .7s linear infinite"}}/></div>}
-    {er&&<Cd style={{background:C.badBg,border:"1px solid "+C.bad+"30"}}><p style={{fontFamily:F,fontSize:13,color:C.tx}}>{er}</p></Cd>}
+    {ld&&<Spinner/>}
+    {er&&<Err msg={er}/>}
     {rs&&<div>
-      <Cd style={{marginBottom:10}}><VB v={rs.verdict}/><h3 style={{fontFamily:F,fontSize:17,fontWeight:700,color:C.tx,margin:"8px 0 4px"}}>{rs.recipe_name}</h3><p style={{fontFamily:F,fontSize:12,color:C.txM,marginBottom:12,lineHeight:1.5}}>{rs.verdict_reason}</p>
-        <div style={{display:"flex",gap:8}}>{[{l:"Originale",d:rs.original_estimate,dim:true},{l:"Optimisée",d:rs.optimized_estimate}].map(function(col,i){return <div key={i} style={{flex:1,padding:10,borderRadius:C.rx,background:col.dim?C.bgEl:C.prS,border:"1px solid "+(col.dim?C.brd:C.pr+"30")}}><p style={{fontFamily:F,fontSize:9,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.4,marginBottom:6}}>{col.l}</p>{[{l:"Prot",v:col.d.proteins_g+"g",c:C.prot},{l:"Cal",v:""+col.d.calories,c:C.cal}].map(function(r,j){return <div key={j} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontFamily:F,fontSize:11,color:C.txM}}>{r.l}</span><span style={{fontFamily:F,fontSize:12,fontWeight:700,color:col.dim?C.txS:r.c}}>{r.v}</span></div>})}</div>})}</div>
+      <Cd style={{marginBottom:10}}><VB v={rs.verdict}/><h3 style={{fontFamily:F,fontSize:17,fontWeight:700,color:C.tx,margin:"8px 0 4px"}}>{rs.recipe_name}</h3><p style={{fontFamily:F,fontSize:12,color:C.tm,marginBottom:12,lineHeight:1.5}}>{rs.verdict_reason}</p>
+        <div style={{display:"flex",gap:8}}>{[{l:"Originale",d:rs.original_estimate,dim:true},{l:"Optimisée",d:rs.optimized_estimate,dim:false}].map(function(col,i){return <div key={i} style={{flex:1,padding:10,borderRadius:10,background:col.dim?C.el:C.ps,border:"1px solid "+(col.dim?C.bd:C.pr+"30")}}>
+          <p style={{fontFamily:F,fontSize:9,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.4,marginBottom:6}}>{col.l}</p>
+          {[{l:"Prot",v:col.d.proteins_g+"g",c:C.prot},{l:"Cal",v:""+col.d.calories,c:C.cal}].map(function(r,j){return <div key={j} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontFamily:F,fontSize:11,color:C.tm}}>{r.l}</span><span style={{fontFamily:F,fontSize:12,fontWeight:700,color:col.dim?C.ts:r.c}}>{r.v}</span></div>})}
+        </div>})}</div>
       </Cd>
-      <Cd style={{marginBottom:10}}><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>Optimisations</p>{rs.optimizations&&rs.optimizations.map(function(o,i){return <OI key={i} o={o}/>})}</Cd>
-      {rs.next_step&&<Cd style={{background:C.prS,border:"1px solid "+C.pr+"30"}}><div style={{display:"flex",gap:10}}><span style={{fontSize:16}}>💡</span><div><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.pr,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Et pour la suite ?</p><p style={{fontFamily:F,fontSize:13,color:C.tx,lineHeight:1.5}}>{rs.next_step}</p></div></div></Cd>}
+      <Cd style={{marginBottom:10}}><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>Optimisations</p>
+        {rs.optimizations&&rs.optimizations.map(function(o,i){return <OI key={i} o={o}/>})}
+      </Cd>
+      {rs.next_step&&<Cd style={{background:C.ps,border:"1px solid "+C.pr+"30",marginBottom:16}}><div style={{display:"flex",gap:10}}><span style={{fontSize:16}}>💡</span><div><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.pr,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Et pour la suite ?</p><p style={{fontFamily:F,fontSize:13,color:C.tx,lineHeight:1.5}}>{rs.next_step}</p></div></div></Cd>}
     </div>}
   </div>;
 }
-function OI({o}){var _d=useState(false),d=_d[0],sD=_d[1];return <div onClick={function(){sD(!d)}} style={{display:"flex",gap:9,padding:"10px 11px",marginBottom:5,borderRadius:C.rx,background:d?C.prS:C.bgEl,border:"1px solid "+(d?C.pr+"30":"transparent"),cursor:"pointer"}}><div style={{width:18,height:18,borderRadius:5,flexShrink:0,marginTop:1,border:"2px solid "+(d?C.pr:C.brd),background:d?C.pr:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:700}}>{d?"✓":""}</div><div style={{flex:1}}><p style={{fontFamily:F,fontSize:12,fontWeight:600,color:C.tx,marginBottom:2,opacity:d?.5:1,textDecoration:d?"line-through":"none"}}>{o.action}</p><p style={{fontFamily:F,fontSize:11,color:C.txM,marginBottom:3}}>{o.reason}</p><span style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.pr,background:C.prS,padding:"2px 6px",borderRadius:5}}>{o.impact}</span></div></div>}
+function OI({o}){var s=useState(false),d=s[0],sD=s[1];return <div onClick={function(){sD(!d)}} style={{display:"flex",gap:9,padding:"10px 11px",marginBottom:5,borderRadius:10,background:d?C.ps:C.el,border:"1px solid "+(d?C.pr+"30":"transparent"),cursor:"pointer"}}><div style={{width:18,height:18,borderRadius:5,flexShrink:0,marginTop:1,border:"2px solid "+(d?C.pr:C.bd),background:d?C.pr:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:700}}>{d?"✓":""}</div><div style={{flex:1}}><p style={{fontFamily:F,fontSize:12,fontWeight:600,color:C.tx,marginBottom:2,opacity:d?.5:1,textDecoration:d?"line-through":"none"}}>{o.action}</p><p style={{fontFamily:F,fontSize:11,color:C.tm,marginBottom:3}}>{o.reason}</p><span style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.pr,background:C.ps,padding:"2px 6px",borderRadius:5}}>{o.impact}</span></div></div>}
 
 /* ═══ PROFILE ═══ */
-function Profile({onBack}){return <div style={{padding:"env(safe-area-inset-top, 12px) 16px "+(NAV_H+16)+"px",overflowY:"auto",height:"100%"}}>
-  <div style={{paddingTop:12,display:"flex",alignItems:"center",gap:12,marginBottom:18}}><div onClick={onBack} style={{cursor:"pointer",fontSize:18,color:C.txS}}>←</div><h2 style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx}}>Profil</h2></div>
-  <Cd style={{marginBottom:14}}><div style={{textAlign:"center",marginBottom:16}}><div style={{width:56,height:56,borderRadius:28,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px",fontSize:24,color:"#fff",fontWeight:700}}>S</div><h3 style={{fontFamily:F,fontSize:18,fontWeight:700,color:C.tx}}>{prof.name}</h3><p style={{fontFamily:F,fontSize:12,color:C.txM,marginTop:2}}>{prof.obj}</p></div>
-    {[{i:"🎯",l:"Protéines / jour",v:prof.protG+"g"},{i:"🔥",l:"Calories / jour",v:prof.calG+" kcal"},{i:"🍞",l:"Glucides / jour",v:prof.carbG+"g"},{i:"🫒",l:"Lipides / jour",v:prof.fatG+"g"},{i:"🏃",l:"Activité",v:prof.act}].map(function(r,i){return <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:"1px solid "+C.div}}><span style={{fontSize:16}}>{r.i}</span><span style={{flex:1,fontFamily:F,fontSize:12,color:C.txM}}>{r.l}</span><span style={{fontFamily:F,fontSize:13,fontWeight:700,color:C.tx}}>{r.v}</span></div>})}
+function ProfileScr({onBack}){return <div className="scroll-area nav-pad" style={{padding:"0 16px"}}>
+  <div className="safe-top" style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}><div onClick={onBack} style={{cursor:"pointer",fontSize:18,color:C.ts}}>←</div><h2 style={{fontFamily:F,fontSize:20,fontWeight:700,color:C.tx}}>Profil</h2></div>
+  <Cd style={{marginBottom:14}}><div style={{textAlign:"center",marginBottom:16}}>
+    <div style={{width:56,height:56,borderRadius:28,background:"linear-gradient(135deg,"+C.pr+",#2DD48A)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px",fontSize:24,color:"#fff",fontWeight:700}}>S</div>
+    <h3 style={{fontFamily:F,fontSize:18,fontWeight:700,color:C.tx}}>{P.name}</h3><p style={{fontFamily:F,fontSize:12,color:C.tm,marginTop:2}}>{P.obj}</p></div>
+    {[{i:"🎯",l:"Protéines / jour",v:P.protG+"g"},{i:"🔥",l:"Calories / jour",v:P.calG+" kcal"},{i:"🍞",l:"Glucides / jour",v:P.carbG+"g"},{i:"🫒",l:"Lipides / jour",v:P.fatG+"g"},{i:"🏃",l:"Activité",v:P.act}].map(function(r,i){return <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:"1px solid "+C.dv}}><span style={{fontSize:16}}>{r.i}</span><span style={{flex:1,fontFamily:F,fontSize:12,color:C.tm}}>{r.l}</span><span style={{fontFamily:F,fontSize:13,fontWeight:700,color:C.tx}}>{r.v}</span></div>})}
   </Cd>
-  <Cd><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.txM,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>Bilan semaine</p>
-    {[{l:"Protéines atteintes",v:"5/7 j",ok:true},{l:"Calories respectées",v:"4/7 j",ok:false},{l:"Streak",v:"3 jours 🔥",ok:true}].map(function(s,i){return <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:i>0?"1px solid "+C.div:"none"}}><span style={{fontFamily:F,fontSize:12,color:C.txS}}>{s.l}</span><span style={{fontFamily:F,fontSize:12,fontWeight:700,color:s.ok?C.ok:C.adj}}>{s.v}</span></div>})}
+  <Cd style={{marginBottom:16}}><p style={{fontFamily:F,fontSize:10,fontWeight:700,color:C.tm,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>Bilan semaine</p>
+    {[{l:"Protéines atteintes",v:"5/7 j",ok:true},{l:"Calories respectées",v:"4/7 j",ok:false},{l:"Streak",v:"3 jours 🔥",ok:true}].map(function(s,i){return <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:i>0?"1px solid "+C.dv:"none"}}><span style={{fontFamily:F,fontSize:12,color:C.ts}}>{s.l}</span><span style={{fontFamily:F,fontSize:12,fontWeight:700,color:s.ok?C.ok:C.adj}}>{s.v}</span></div>})}
   </Cd>
 </div>}
 
 /* ═══ NAV ═══ */
-function Nav({active,go}){
+function Nav({act,go}){
   var tabs=[{id:"dash",i:"🏠",l:"Accueil"},{id:"scan",i:"📸",l:"Scan"},{id:"coach",i:"🧠",l:"Coach"},{id:"journal",i:"📋",l:"Journal"},{id:"profile",i:"👤",l:"Profil"}];
-  return <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.bgCard+"f0",borderTop:"1px solid "+C.brd,display:"flex",justifyContent:"space-around",padding:"6px 0 env(safe-area-inset-bottom, 16px)",zIndex:100,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
-    {tabs.map(function(t){return <div key={t.id} onClick={function(){go(t.id)}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,cursor:"pointer",opacity:active===t.id?1:.4,transition:"opacity .2s",padding:"2px 0"}}>
-      <span style={{fontSize:20}}>{t.i}</span><span style={{fontFamily:F,fontSize:9,fontWeight:600,color:active===t.id?C.pr:C.txM}}>{t.l}</span>
-      {active===t.id&&<div style={{width:4,height:4,borderRadius:2,background:C.pr}}/>}
+  return <div className="nav-safe" style={{position:"fixed",bottom:0,left:0,right:0,background:C.card+"f0",borderTop:"1px solid "+C.bd,display:"flex",justifyContent:"space-around",paddingTop:6,zIndex:100,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
+    {tabs.map(function(tab){return <div key={tab.id} onClick={function(){go(tab.id)}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,cursor:"pointer",opacity:act===tab.id?1:.4,padding:"2px 0"}}>
+      <span style={{fontSize:20}}>{tab.i}</span><span style={{fontFamily:F,fontSize:9,fontWeight:600,color:act===tab.id?C.pr:C.tm}}>{tab.l}</span>
+      {act===tab.id&&<div style={{width:4,height:4,borderRadius:2,background:C.pr}}/>}
     </div>})}
   </div>;
 }
 
 /* ═══ APP ═══ */
 function App(){
-  var _s=useState("dash"),scr=_s[0],sScr=_s[1],_e=useState(true),exp=_e[0],sExp=_e[1],_j=useState(initJ),jnl=_j[0],sJnl=_j[1];
-  var add=function(item){var now=new Date();sJnl(function(prev){return prev.concat([{id:Date.now(),name:item.name,time:String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"),p:item.p,cal:item.cal,cb:item.cb||0,f:item.f||0,v:item.v||"adjust",em:item.em||"🍽️"}])});sScr("journal")};
-  return <div style={{maxWidth:430,margin:"0 auto",background:C.bg,height:"100vh",fontFamily:F,position:"relative",overflow:"hidden"}}>
-    <div style={{height:"100%",display:scr==="dash"?"block":"none"}}><Dash journal={jnl} isExp={exp} onTog={function(){sExp(!exp)}} onNav={sScr}/></div>
-    <div style={{height:"100%",display:scr==="scan"?"block":"none"}}><Scan onBack={function(){sScr("dash")}} onAdd={add}/></div>
-    <div style={{height:"100%",display:scr==="coach"?"flex":"none"}}><Coach journal={jnl}/></div>
-    <div style={{height:"100%",display:scr==="journal"?"block":"none"}}><Journal journal={jnl}/></div>
-    <div style={{height:"100%",display:scr==="profile"?"block":"none"}}><Profile onBack={function(){sScr("dash")}}/></div>
-    <div style={{height:"100%",display:scr==="jow"?"block":"none"}}><Jow onBack={function(){sScr("dash")}} journal={jnl}/></div>
-    <Nav active={scr==="jow"?"dash":scr} go={sScr}/>
+  var s1=useState("dash"),scr=s1[0],sScr=s1[1];
+  var s2=useState(true),exp=s2[0],sExp=s2[1];
+  var s3=useState(initJ),jnl=s3[0],sJnl=s3[1];
+
+  var add=function(item){
+    var now=new Date();
+    var entry={id:Date.now(),n:item.n,t:String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"),p:item.p,cal:item.cal,cb:item.cb||0,f:item.f||0,v:item.v||"adjust",e:item.e||"🍽️"};
+    sJnl(function(prev){return prev.concat([entry])});
+    sScr("journal");
+  };
+
+  /* Rendu conditionnel (pas display:none) pour éviter les bugs de layout */
+  var screen=null;
+  if(scr==="dash") screen=React.createElement(Dash,{journal:jnl,isExp:exp,onTog:function(){sExp(!exp)},onNav:sScr});
+  if(scr==="scan") screen=React.createElement(ScanScr,{onBack:function(){sScr("dash")},onAdd:add});
+  if(scr==="coach") screen=React.createElement(CoachScr,{journal:jnl});
+  if(scr==="journal") screen=React.createElement(JournalScr,{journal:jnl});
+  if(scr==="profile") screen=React.createElement(ProfileScr,{onBack:function(){sScr("dash")}});
+  if(scr==="jow") screen=React.createElement(JowScr,{onBack:function(){sScr("dash")},journal:jnl});
+
+  return <div style={{maxWidth:430,margin:"0 auto",background:C.bg,height:"100%",fontFamily:F,position:"relative",overflow:"hidden"}}>
+    {screen}
+    <Nav act={scr==="jow"?"dash":scr} go={sScr}/>
   </div>;
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
